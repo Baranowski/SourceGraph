@@ -1,3 +1,0 @@
-let b:ghc_staticoptions='-idist/build/autogen'
-setlocal path+=./dist/build/autogen 
-set shiftwidth=2
