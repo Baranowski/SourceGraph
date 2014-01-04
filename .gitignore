@@ -1,3 +1,7 @@
 *.swp
+*.hi
+*.o
 dist/
 bin/
+Makefile
+SourceGraph/
