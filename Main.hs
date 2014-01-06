@@ -34,6 +34,8 @@ import CabalInfo
 import Parsing
 import Parsing.Types(nameOfModule)
 import Analyse
+import Analyse.Utils
+import Analyse.ManyFiles
 
 import Data.Graph.Analysis
 import Data.Graph.Analysis.Reporting.Pandoc
@@ -58,9 +60,6 @@ import Control.Arrow(second)
 import Control.Monad(liftM)
 import Control.Exception(SomeException(..), try)
 
-import Data.Version(showVersion)
-import qualified Paths_SourceGraph as Paths(version)
-
 -- -----------------------------------------------------------------------------
 
 main :: IO ()
@@ -80,12 +79,6 @@ main = do quitWithoutGraphviz noGraphvizErr
   where
     noGraphvizErr = "ERROR:" ++ programmeName ++ " requires the tools from \
                     \http://graphviz.org to be installed."
-
-programmeName :: String
-programmeName = "SourceGraph"
-
-programmeVersion :: String
-programmeVersion = showVersion Paths.version
 
 putErrLn :: String -> IO ()
 putErrLn = hPutStrLn stderr
@@ -219,13 +212,20 @@ isSetup f = lowerCase f `elem` map ("setup" <.>) haskellExtensions
 
 analyseCode                    :: FilePath -> String -> [ModName]
                                   -> [FilePath] -> ParsedModules -> IO ()
-analyseCode fp nm exps fld hms = do d <- today
-                                    g <- newStdGen
-                                    let dc = doc d g
-                                    docOut <- createDocument pandocHtml' dc
-                                    case docOut of
-                                      Just path -> success path
-                                      Nothing   -> failure
+analyseCode fp nm exps fld hms = do analyseToBigFile rt nm exps fld hms
+                                    analyseToManyFiles rt nm exps fld hms
+    where
+      rt = fp </> programmeName
+
+analyseToBigFile                    :: FilePath -> String -> [ModName]
+                                       -> [FilePath] -> ParsedModules -> IO ()
+analyseToBigFile rt nm exps fld hms = do d <- today
+                                         g <- newStdGen
+                                         let dc = doc d g
+                                         docOut <- createDocument pandocHtml' dc
+                                         case docOut of
+                                           Just path -> success path
+                                           Nothing   -> failure
     where
       pandocHtml' = alsoSaveDot pandocHtml
       graphdir = "graphs"
@@ -233,16 +233,12 @@ analyseCode fp nm exps fld hms = do d <- today
                     , fileFront      = nm
                     , graphDirectory = graphdir
                     , title          = t
-                    , author         = a
+                    , author         = authorInfo
                     , date           = d
                     , legend         = sgLegend
                     , content        = notes : c g
                     }
-      rt = fp </> programmeName
-      sv s v = s ++ " (version " ++ v ++ ")"
       t = Grouping [Text "Analysis of", Text nm]
-      a = unwords [ "Analysed by", sv programmeName programmeVersion
-                  , "using", sv "Graphalyze" version]
       c g = analyse g exps hms
       success fp' = putStrLn $ unwords ["Report generated at:",fp']
       failure = putErrLn "Unable to generate report"
@@ -278,3 +274,18 @@ analyseCode fp nm exps fld hms = do d <- today
                                  \ analysis failures:"]
                , Itemized $ map (Paragraph . return . Text) fld
                ]
+
+analyseToManyFiles                    :: FilePath -> String -> [ModName]
+                                         -> [FilePath] -> ParsedModules -> IO ()
+analyseToManyFiles rt _ _ _ hms = do t <- today
+                                     mapM_ makeDoc (docs t)
+    where
+      reportDir = rt </> "separate_files"
+      docs t = analyseNodes reportDir t hms
+      makeDoc d = do docOut <- createDocument pandocHtml d
+                     case docOut of
+                       Just path ->
+                         putStrLn $ "Generated doc: " ++ (fileFront d)
+                                    ++ " at: "  ++ path
+                       Nothing   ->
+                         putErrLn $ "Cannot generate doc: " ++ (fileFront d)

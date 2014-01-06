@@ -60,6 +60,7 @@ Executable SourceGraph {
                         Analyse.Colors,
                         Analyse.GraphRepr,
                         Analyse.Visualise,
+                        Analyse.ManyFiles,
                         Analyse.Module,
                         Analyse.Imports,
                         Analyse.Everything,

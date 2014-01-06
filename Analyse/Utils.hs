@@ -35,8 +35,24 @@ import Data.List(groupBy, sortBy)
 import Data.Function(on)
 import qualified Data.Set as S
 import Data.Set(Set)
+import Data.Version(showVersion)
+import qualified Paths_SourceGraph as Paths(version)
 
 -- -----------------------------------------------------------------------------
+
+programmeName :: String
+programmeName = "SourceGraph"
+
+programmeVersion :: String
+programmeVersion = showVersion Paths.version
+
+authorInfo :: String
+authorInfo = unwords [ "Analysed by"
+                     , appendVersion programmeName programmeVersion
+                     , "using", appendVersion "Graphalyze" version]
+
+appendVersion     :: [Char] -> [Char] -> [Char]
+appendVersion s v = s ++ " (version " ++ v ++ ")"
 
 -- | Cyclomatic complexity
 cyclomaticComplexity    :: GraphData a b -> Int
