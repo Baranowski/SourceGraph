@@ -65,7 +65,7 @@ mkIndex rt t nodesInfo = Doc { rootDirectory    = rt
       modIndex (mName, entSet) =
           Section (Text mName)
                   [Itemized (entSetToLinks nodesInfo entSet)]
-      indexContent = [Itemized (map modIndex (M.toList entsInMods))]
+      indexContent = map modIndex (M.toList entsInMods)
 
 niToDocument                    :: NodesInfo -> FilePath -> String
                                    -> (Entity, NodeInfo) -> Document
