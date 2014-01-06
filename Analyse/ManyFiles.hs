@@ -14,7 +14,7 @@ import Analyse.Utils
 
 type Node = Entity
 data NodeInfo = NI { calledBy :: S.Set Node
-                   , calls :: S.Set Node
+                   , calls    :: S.Set Node
                    }
 
 newtype NodesInfo = NsI { nim :: M.Map Node NodeInfo }
@@ -35,12 +35,40 @@ instance Monoid NodesInfo where
                                              m
 
 analyseNodes          :: FilePath -> String -> ParsedModules -> [Document]
-analyseNodes rt t hms = map (niToDocument res rt t) (nsIToList res)
+analyseNodes rt t hms = indexDoc:entDocs
     where
-      (_, res) = runIdentity $ runWriterT $ mapM_ singleModule (M.toList hms)
+      (_, nodesInfo) = runIdentity $ runWriterT $ mapM_ singleModule (M.toList hms)
+      nodesInfosList = nsIToList nodesInfo
+      entDocs = map (niToDocument nodesInfo rt t) nodesInfosList
+      indexDoc = mkIndex rt t nodesInfo
 
-niToDocument                :: NodesInfo -> FilePath -> String
-                               -> (Entity, NodeInfo) -> Document
+mkIndex                :: FilePath -> String -> NodesInfo -> Document
+mkIndex rt t nodesInfo = Doc { rootDirectory    = rt
+                             , fileFront        = "index"
+                             , graphDirectory   = "graphs"
+                             , title            = Text "Index"
+                             , author           = authorInfo
+                             , date             = t
+                             , legend           = []
+                             , content          = indexContent
+                             }
+    where
+      ents = M.keys $ nim nodesInfo
+      entsInMods :: M.Map String (S.Set Entity)
+      entsInMods = foldr addEnt M.empty ents
+      addEnt ent m = newM
+          where
+            mName = modFullName $ inModule ent
+            newM = case M.lookup mName m of
+              Nothing -> M.insert mName (S.singleton ent) m
+              Just s  -> M.insert mName (S.insert ent s) m
+      modIndex (mName, entSet) =
+          Section (Text mName)
+                  [Itemized (entSetToLinks nodesInfo entSet)]
+      indexContent = [Itemized (map modIndex (M.toList entsInMods))]
+
+niToDocument                    :: NodesInfo -> FilePath -> String
+                                   -> (Entity, NodeInfo) -> Document
 niToDocument nsi rt t (ent, ni) = Doc { rootDirectory  = rt
                                       , fileFront      = entToFilefront nsi ent
                                       , graphDirectory = "graphs"
@@ -58,7 +86,7 @@ modFullName m          = modName m
 entFullName     :: Entity -> [Char]
 entFullName ent = (modFullName $ inModule ent) ++ "." ++ (name ent)
 
-entToFilefront :: NodesInfo -> Entity -> [Char]
+entToFilefront         :: NodesInfo -> Entity -> [Char]
 entToFilefront nsi ent = zeroes ++ (show num)
     where
       m = nim nsi
@@ -77,16 +105,19 @@ entToFilename nsi ent = (entToFilefront nsi ent) ++ ".html"
 entToTitle     :: Entity -> [Char]
 entToTitle ent = (name ent) ++ " from " ++ (modFullName $ inModule ent)
 
-niReport    :: NodesInfo -> NodeInfo -> [DocElement]
+niReport        :: NodesInfo -> NodeInfo -> [DocElement]
 niReport nsi ni = [ Section (Text "Called by")
-                            [Itemized $ entSetToLinks $ calledBy ni]
+                            [Itemized $ entSetToLinks nsi $ calledBy ni]
                   , Section (Text "Calls")
-                            [Itemized $ entSetToLinks $ calls ni]
+                            [Itemized $ entSetToLinks nsi $ calls ni]
                   ]
-    where
-      entSetToLinks s = map entToLink (S.toList s)
-      entToLink ent = Paragraph [DocLink (Text $ entFullName ent)
-                                         (File $ entToFilename nsi ent) ]
+
+entSetToLinks       :: NodesInfo -> S.Set Entity -> [DocElement]
+entSetToLinks nsi s = map (entToLink nsi) (S.toList s)
+
+entToLink         :: NodesInfo -> Entity -> DocElement
+entToLink nsi ent = Paragraph [DocLink (Text $ entFullName ent)
+                                   (File $ entToFilename nsi ent) ]
 
 singleModule        :: (ModName, ParsedModule) -> WriterT NodesInfo Identity ()
 singleModule (_, m) = mapM_ singleCall (MS.elems $ funcCalls m)
