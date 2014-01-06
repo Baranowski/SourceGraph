@@ -284,8 +284,6 @@ analyseToManyFiles rt _ _ _ hms = do t <- today
       docs t = analyseNodes reportDir t hms
       makeDoc d = do docOut <- createDocument pandocHtml d
                      case docOut of
-                       Just path ->
-                         putStrLn $ "Generated doc: " ++ (fileFront d)
-                                    ++ " at: "  ++ path
+                       Just _    -> return ()
                        Nothing   ->
                          putErrLn $ "Cannot generate doc: " ++ (fileFront d)

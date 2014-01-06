@@ -6,7 +6,6 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.MultiSet as MS
 import Data.Graph.Analysis.Reporting
-import Data.List(isPrefixOf)
 import Control.Monad.Writer
 import Control.Monad.Identity
 
@@ -18,7 +17,7 @@ data NodeInfo = NI { calledBy :: S.Set Node
                    , calls :: S.Set Node
                    }
 
-newtype NodesInfo = NsI (M.Map Node NodeInfo)
+newtype NodesInfo = NsI { nim :: M.Map Node NodeInfo }
 
 nsIToList         :: NodesInfo -> [(Node, NodeInfo)]
 nsIToList (NsI m) = M.toList m
@@ -36,21 +35,21 @@ instance Monoid NodesInfo where
                                              m
 
 analyseNodes          :: FilePath -> String -> ParsedModules -> [Document]
-analyseNodes rt t hms = map (niToDocument rt t) (nsIToList res)
+analyseNodes rt t hms = map (niToDocument res rt t) (nsIToList res)
     where
       (_, res) = runIdentity $ runWriterT $ mapM_ singleModule (M.toList hms)
 
-niToDocument                :: FilePath -> String -> (Entity, NodeInfo)
-                               -> Document
-niToDocument rt t (ent, ni) = Doc { rootDirectory  = rt
-                                  , fileFront      = entToFilefront ent
-                                  , graphDirectory = "graphs"
-                                  , title          = Text $ entToTitle ent
-                                  , author         = authorInfo
-                                  , date           = t
-                                  , legend         = []
-                                  , content        = niReport ni
-                                  }
+niToDocument                :: NodesInfo -> FilePath -> String
+                               -> (Entity, NodeInfo) -> Document
+niToDocument nsi rt t (ent, ni) = Doc { rootDirectory  = rt
+                                      , fileFront      = entToFilefront nsi ent
+                                      , graphDirectory = "graphs"
+                                      , title          = Text $ entToTitle ent
+                                      , author         = authorInfo
+                                      , date           = t
+                                      , legend         = []
+                                      , content        = niReport nsi ni
+                                      }
 
 modFullName            :: ModName -> [Char]
 modFullName UnknownMod = "<Unknown>"
@@ -59,32 +58,35 @@ modFullName m          = modName m
 entFullName     :: Entity -> [Char]
 entFullName ent = (modFullName $ inModule ent) ++ "." ++ (name ent)
 
-entToFilefront :: Entity -> [Char]
-entToFilefront = replace "/" "_S_" . entFullName
+entToFilefront :: NodesInfo -> Entity -> [Char]
+entToFilefront nsi ent = zeroes ++ (show num)
+    where
+      m = nim nsi
+      num = M.findIndex ent m
+      logBaseD :: Double -> Double -> Double
+      logBaseD = logBase
+      len n = if n==0
+              then 1
+              else ceiling $ logBaseD 10.0 (fromIntegral $ n + 1)
+      maxlen = len (M.size m - 1)
+      zeroes = replicate (maxlen - (len num)) '0'
 
-replace           :: Eq a => [a] -> [a] -> [a] -> [a]
-replace _ _ []    = []
-replace old new s = if isPrefixOf old s
-                      then new ++ (replace old new (drop (length old) s))
-                      else (head s):(replace old new (tail s))
-
-
-entToFilename     :: Entity -> [Char]
-entToFilename ent = (entToFilefront ent) ++ ".html"
+entToFilename         :: NodesInfo -> Entity -> [Char]
+entToFilename nsi ent = (entToFilefront nsi ent) ++ ".html"
 
 entToTitle     :: Entity -> [Char]
 entToTitle ent = (name ent) ++ " from " ++ (modFullName $ inModule ent)
 
-niReport    :: NodeInfo -> [DocElement]
-niReport ni = [ Section (Text "Called by")
-                                 [Itemized $ entSetToLinks $ calledBy ni]
-                       , Section (Text "Calls")
-                                 [Itemized $ entSetToLinks $ calls ni]
-                       ]
+niReport    :: NodesInfo -> NodeInfo -> [DocElement]
+niReport nsi ni = [ Section (Text "Called by")
+                            [Itemized $ entSetToLinks $ calledBy ni]
+                  , Section (Text "Calls")
+                            [Itemized $ entSetToLinks $ calls ni]
+                  ]
     where
       entSetToLinks s = map entToLink (S.toList s)
       entToLink ent = Paragraph [DocLink (Text $ entFullName ent)
-                                         (File $ entToFilename ent) ]
+                                         (File $ entToFilename nsi ent) ]
 
 singleModule        :: (ModName, ParsedModule) -> WriterT NodesInfo Identity ()
 singleModule (_, m) = mapM_ singleCall (MS.elems $ funcCalls m)
